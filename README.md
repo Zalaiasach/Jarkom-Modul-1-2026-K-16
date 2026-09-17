@@ -22,3 +22,20 @@ iptables -A FORWARD -i eth0 -m state --state ESTABLISHED,RELATED -j ACCEPT
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 
 ```
+
+ini digunakan agar setiap node dapat akses ke internet langsung dan bisa dibuktikan dengan ping   
+![ping](/img/Nomor4/nomor4BuktiPing.png)   
+Setelah berhasil tersambung, kita akan membuat suatu script verifikasi   
+```sh
+#!/bin/sh
+echo "=========================================="
+echo "      STATUS INTERFACE ROUTER LAIN        "
+echo "=========================================="
+ip -br a
+echo ""
+echo "=========================================="
+echo "          TABEL NAT (IPTABLES)            "
+echo "=========================================="
+iptables -t nat -L -v -n
+echo "=========================================="
+```
