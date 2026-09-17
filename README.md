@@ -39,3 +39,117 @@ echo "=========================================="
 iptables -t nat -L -v -n
 echo "=========================================="
 ```
+![cekStatus](/img/Nomor5/nomor5CekStatus.png)   
+
+Berikutnya saya akan melakukan kami akan melakukan pengujian pada node Mika dengan script
+```sh
+#!/bin/bash
+# ============================================
+# Traffic Generator — Protocol 7 Network
+# Serial Experiments Lain — Modul 1 Jarkom 2026
+# Jalankan di node MIKA untuk generate traffic DNS & ICMP
+# ============================================
+
+echo "============================================"
+echo "  Protocol 7 Traffic Generator v2026"
+echo "  Node: Mika Iwakura"
+echo "============================================"
+echo "[*] Generating DNS & ICMP traffic..."
+
+# ICMP Traffic
+ping -c 5 8.8.8.8 &
+ping -c 5 1.1.1.1 &
+ping -c 3 its.ac.id &
+
+# DNS Queries
+nslookup google.com 8.8.8.8 &
+nslookup its.ac.id 8.8.8.8 &
+nslookup github.com 1.1.1.1 &
+dig @8.8.8.8 example.com A &
+dig @1.1.1.1 cloudflare.com AAAA &
+
+wait
+echo "[*] Traffic generation complete."
+echo "[*] Check Wireshark for captured packets."
+
+```
+dengan hasil berikut   
+![buktiwireshark](/img/Nomor6/Nomor6BuktiWireShark1%20(1).png)
+![buktiwireshark](/img/Nomor6/Nomor6BuktiWireShark1%20(2).png)
+![buktiwireshark](/img/Nomor6/Nomor6BuktiWireShark1%20(3).png)
+
+Setelah itu kita akan mendirikan FTP di chisa yang dimana kita membutuhkan vsftpd sehingga kita akan menginstall dengan command ``` apk add vsftpd ``` yang kemudian bisa kita buat semua masukan script sebagai berikut   
+```sh
+# Daftarkan shell sistem yang sah
+grep -qxF '/bin/sh' /etc/shells || echo '/bin/sh' >> /etc/shells
+grep -qxF '/bin/bash' /etc/shells 2>/dev/null || echo '/bin/bash' >> /etc/shells
+
+# Siapkan folder data bersama dan privilege separation
+mkdir -p /var/wired/data
+mkdir -p /usr/share/empty /var/run/vsftpd/empty
+mkdir -p /root/vsftpd_conf/user_conf
+
+# Tambahkan grup dan akun user
+addgroup wired 2>/dev/null || true
+adduser -D -h /var/wired/data -G wired -s /bin/sh alice 2>/dev/null || true
+adduser -D -h /var/wired/data -G wired -s /bin/sh mika 2>/dev/null || true
+adduser -D -h /var/wired/data -G wired -s /bin/sh eiri 2>/dev/null || true
+
+# Atur password user
+echo "alice:alice123" | chpasswd
+echo "mika:mika123" | chpasswd
+echo "eiri:eiri123" | chpasswd
+
+# Buka status password locked di Alpine
+passwd -u alice 2>/dev/null || true
+passwd -u mika 2>/dev/null || true
+passwd -u eiri 2>/dev/null || true
+
+# Atur hak kepemilikan dan hak akses direktori
+chown -R alice:wired /var/wired/data
+chmod -R 775 /var/wired/data
+
+# Buat file manifesto untuk pengujian unduh Mika
+echo "Protocol 7: All information must flow freely across The Wired." > /var/wired/data/protocol7_manifesto.txt
+chown alice:wired /var/wired/data/protocol7_manifesto.txt
+chmod 644 /var/wired/data/protocol7_manifesto.txt
+
+# Buat file konfigurasi utama vsftpd
+cat << 'EOF' > /root/vsftpd_conf/vsftpd.conf
+listen=YES
+listen_ipv6=NO
+anonymous_enable=NO
+local_enable=YES
+write_enable=YES
+local_umask=022
+dirmessage_enable=YES
+use_localtime=YES
+xferlog_enable=YES
+connect_from_port_20=YES
+chroot_local_user=YES
+allow_writeable_chroot=YES
+seccomp_sandbox=NO
+pasv_enable=YES
+pasv_min_port=21100
+pasv_max_port=21110
+user_config_dir=/root/vsftpd_conf/user_conf
+userlist_enable=YES
+userlist_file=/root/vsftpd_conf/vsftpd.userlist
+userlist_deny=YES
+EOF
+
+# Daftarkan Eiri ke dalam blacklist FTP
+echo "eiri" > /root/vsftpd_conf/vsftpd.userlist
+
+# Atur hak akses per-user (Alice: Read-Write, Mika: Read-Only)
+echo "write_enable=YES" > /root/vsftpd_conf/user_conf/alice
+echo "local_root=/var/wired/data" >> /root/vsftpd_conf/user_conf/alice
+
+echo "write_enable=NO" > /root/vsftpd_conf/user_conf/mika
+echo "local_root=/var/wired/data" >> /root/vsftpd_conf/user_conf/mika
+
+# Jalankan / restart service vsftpd
+killall vsftpd 2>/dev/null || true
+/usr/sbin/vsftpd /root/vsftpd_conf/vsftpd.conf &
+
+```
