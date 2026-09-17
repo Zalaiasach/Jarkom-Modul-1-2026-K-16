@@ -153,3 +153,116 @@ killall vsftpd 2>/dev/null || true
 /usr/sbin/vsftpd /root/vsftpd_conf/vsftpd.conf &
 
 ```
+
+setelah vsftpd menyala, kita dapat mengetest misal di alice, pertama kita install dulu lftp nya dengan command ``` apk add lftp ```, lalu jalankan perintah
+```sh
+lftp -u alice,alice123 "$IP_CHISA" -e "set ftp:passive-mode true; put /root/signal_alice.txt; bye"
+```
+yang dimana alice akan memberikan file ke chisa yang dimana memiliki akses read and write   
+![buktiBerhasil](/img/Nomor7/nomor7AliceBerhasil.png)   
+
+Setelah chisa dapat digunakan, selanjutnya Knights perlu melakukan pengiriman suatu file dari Knights ke Chisa dengan akun alice dengan script
+```sh
+echo "[+] 1. Upload knights_report.txt ke FTP Chisa ($IP_CHISA) via akun Alice..."
+echo -e "nameserver 8.8.8.8\nnameserver 1.1.1.1" > /etc/resolv.conf
+
+cat << 'EOF' > /root/knights_report.txt
+Knights Protocol Report: Data synchronization with The Wired complete.
+EOF
+
+apk add lftp 2>/dev/null || true
+lftp -u alice,alice123 "$IP_CHISA" -e "set ftp:passive-mode true; put /root/knights_report.txt; bye"
+echo "[✓] Berkas knights_report.txt berhasil diunggah ke Chisa!"
+```   
+![bukti](/img/Nomor8/Nomor8Buktiberhasil.png)  
+Lalu berikutnya, dari chisa, kita akan mendownload file ke Mika, dengan script yaitu
+```sh
+lftp -u mika,mika123 "$IP_CHISA" << 'EOF' > /root/bukti_readonly_mika.txt 2>&1
+set ftp:passive-mode true
+get protocol7_manifesto.txt -o /root/protocol7_manifesto.txt
+put /root/mika_unauthorized.txt
+bye
+```
+![bukti](/img/Nomor9/nomor9BuktiAdaFile.png)   
+Dari soal tersebut, kita dapat membuktikan bahwa Mika bersifat ReadOnly
+![bukti](/img/Nomor9/nomor9BuktiReadOnly.png)   
+![bukti](/img/Nomor9/nomor9PercobaanWrite.png)   
+Lalu Knights mencoba untuk melakukan ping ke chisa dengan command ```ping -c 77 -s 128 -i 0.3 <IP_Chisa>``` yang kemudian dapat dilihat di wireshark
+![bukti](/img/Nomor10/Screenshot%20(99).png)
+![bukti](/img/Nomor10/Screenshot%20(100).png)   
+Berikutnya kita akan menguji keamanan telnet dengan membuat akun phantom_user di chisa yang kemudian akan dicheck di wiredshark   
+```sh
+echo "[+] Menyiapkan akun Telnet phantom_user..."
+adduser -D -s /bin/sh phantom_user 2>/dev/null || true
+echo "phantom_user:wired_ghost" | chpasswd
+passwd -u phantom_user 2>/dev/null || true
+
+killall telnetd 2>/dev/null || true
+telnetd -p 23
+
+echo "[✓] Konfigurasi di Chisa (192.219.2.2) selesai!"
+echo "    - FTP Server aktif di port 21"
+echo "    - Telnet Server aktif di port 23"
+netstat -tlpn | grep -E ':21|:23'
+```
+yang kemudian dapat kita lihat di wireshark
+![bukti](/img/Nomor11/Screenshot%202026-09-17%20081731.png)   
+Dari gambar tersebut dapat dilihat apa saja yang diketik pengguna dan apa saja yang diterima, yang menyebabkan orang lain dapat melihatnya   
+Kemudian Alice akan memindai port Alice ke Knights dengan nc untuk memeriksa port 22 dan 80 serta port rahasia denga script 
+```sh
+echo ""
+echo "[+] 2. Melakukan Port Scanning ke Knights ($IP_KNIGHTS)..."
+echo "--- Hasil Scan Port (22, 80, 7777) ---"
+nc -zv -w 2 "$IP_KNIGHTS" 22 80 7777 > /root/hasil_scan_port.txt 2>&1 || true
+cat /root/hasil_scan_port.txt
+echo "[✓] Port scan selesai. Hasil disimpan di /root/hasil_scan_port.txt"
+```
+yang dimana menghasilkan   
+![bukti](/img/Nomor12/nomor12BuktiTest.png)
+Dapat terlihat Alice dapat mengakses port 22 dan 80 namun tidak dapat mengakses port rahasia   
+berikutnya adalah Install OpenSSH server pada node Knights, buat pasangan kunci SSH (ssh-keygen) pada node Mika untuk user mika_admin, dan konfigurasikan public key authentication (PasswordAuthentication no). Kita lakukan dengan script   
+```sh
+grep -qxF '/bin/sh' /etc/shells || echo '/bin/sh' >> /etc/shells
+
+# Setup akun mika_admin untuk SSH Public Key Auth
+echo "[+] Membuat akun mika_admin..."
+adduser -D -s /bin/sh mika_admin 2>/dev/null || true
+echo "mika_admin:mika123" | chpasswd
+passwd -u mika_admin 2>/dev/null || true
+
+# Siapkan folder .ssh untuk mika_admin
+mkdir -p /home/mika_admin/.ssh
+chmod 755 /home/mika_admin
+chmod 700 /home/mika_admin/.ssh
+chown -R mika_admin:mika_admin /home/mika_admin
+
+# Generate host keys SSH jika belum ada
+ssh-keygen -A 2>/dev/null || true
+
+# Konfigurasi SSH Daemon (Hanya Public Key, Password Auth Mati)
+sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+grep -qxF 'PubkeyAuthentication yes' /etc/ssh/sshd_config || echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config
+grep -qxF 'PasswordAuthentication no' /etc/ssh/sshd_config || echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config
+grep -qxF 'AuthorizedKeysFile .ssh/authorized_keys' /etc/ssh/sshd_config || echo 'AuthorizedKeysFile .ssh/authorized_keys' >> /etc/ssh/sshd_config
+
+# Jalankan service SSH (Port 22)
+killall sshd 2>/dev/null || true
+/usr/sbin/sshd
+
+# Jalankan HTTP Server sederhana di port 80 untuk port scanning
+mkdir -p /var/www/localhost/htdocs
+killall httpd 2>/dev/null || true
+httpd -p 80 -h /var/www/localhost/htdocs
+
+# Pastikan port 7777 tertutup (tidak ada proses listening)
+fuser -k 7777/tcp 2>/dev/null || true
+
+echo "[✓] Setup Knights (192.219.3.2) selesai!"
+echo "    - Port 22 (SSH): LISTEN"
+echo "    - Port 80 (HTTP): LISTEN"
+echo "    - Port 7777: CLOSED"
+netstat -tlpn | grep -E ':22|:80|:7777'
+```
+Yang dimana dengan ini Mika dapat akses tanpa menggunakan password
+![bukti](/img/Nomor13/Screenshot%202026-09-17%20091900.png)
