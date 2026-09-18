@@ -1,5 +1,5 @@
 # Laporan Modul 1 K-16
-namaku   
+Afriezal Suryapraba Laiasach (5027251096)   
 namanya   
 
 ## Setup GNS dan pengerjaan Soal 1-13
